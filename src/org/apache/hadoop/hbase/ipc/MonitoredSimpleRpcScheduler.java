@@ -17,8 +17,6 @@
  */
 package org.apache.hadoop.hbase.ipc;
 
-import com.google.common.collect.Lists;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -26,21 +24,33 @@ import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseInterfaceAudience;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.ipc.BalancedQueueRpcExecutor;
+import org.apache.hadoop.hbase.ipc.CallRunner;
+import org.apache.hadoop.hbase.ipc.MetricsHBaseServerSource;
+import org.apache.hadoop.hbase.ipc.MetricsHBaseServerSourceImpl;
+import org.apache.hadoop.hbase.ipc.PriorityFunction;
+import org.apache.hadoop.hbase.ipc.RWQueueRpcExecutor;
+import org.apache.hadoop.hbase.ipc.RpcExecutor;
+import org.apache.hadoop.hbase.ipc.RpcScheduler;
+import org.apache.hadoop.hbase.ipc.RpcServer;
+import org.apache.hadoop.hbase.ipc.RpcScheduler.Context;
+import org.apache.hadoop.hbase.ipc.RpcServer.Call;
 import org.apache.hadoop.hbase.regionserver.RegionServerServices;
-import org.apache.hadoop.hbase.schedule.Dumpable;
-import org.apache.hadoop.hbase.schedule.HBaseScheduleMetrics;
-import org.apache.hadoop.hbase.schedule.LlamaResourceBroker;
-import org.apache.hadoop.hbase.schedule.LlamaResourceBrokerFactory;
-import org.apache.hadoop.hbase.schedule.ResourceBroker;
-import org.apache.hadoop.hbase.schedule.ResourceBrokerFactory;
 import org.apache.hadoop.hbase.util.BoundedPriorityBlockingQueue;
 import org.apache.hadoop.metrics2.lib.Interns;
 import org.apache.hadoop.metrics2.lib.MutableHistogram;
 import org.apache.hadoop.util.ReflectionUtils;
+import org.apache.hadoop.hbase.schedule.Dumpable;
+import org.apache.hadoop.hbase.schedule.LlamaResourceBrokerFactory;
+import org.apache.hadoop.hbase.schedule.MonitoredSimpleRpcSchdulerThread;
+import org.apache.hadoop.hbase.schedule.ResourceBroker;
+import org.apache.hadoop.hbase.schedule.ResourceBrokerFactory;
+import org.apache.hadoop.hbase.schedule.metrics.HBaseScheduleMetrics;
+import org.apache.hadoop.hbase.schedule.metrics.SimpleMetricsBuilder;
+import org.apache.hadoop.hbase.schedule.metrics.SimpleRecordBuilder;
 
 import java.io.IOException;
 import java.util.Comparator;
-import java.util.List;
 
 /**
  * A scheduler that maintains isolated handler pools for general, high-priority,
@@ -60,7 +70,7 @@ public class MonitoredSimpleRpcScheduler extends RpcScheduler implements
 
 	/**
 	 * If set to 'deadlinedeadline', uses a priority queue and deprioritize
-	 * long-running scans
+	 * long-running scans 
 	 */
 	public static final String CALL_QUEUE_TYPE_CONF_KEY = "hbase.ipc.server.callqueue.type";
 	public static final String CALL_QUEUE_TYPE_DEADLINE_CONF_VALUE = "deadline";
@@ -93,7 +103,7 @@ public class MonitoredSimpleRpcScheduler extends RpcScheduler implements
 	// private final List<Thread> handlers = Lists.newArrayList();
 
 	private int maxQueueLength;
-	private MonitoredSimpleRpSchdulerThread monitor;
+	private MonitoredSimpleRpcSchdulerThread monitor;
 	private Configuration conf;
 	// private MetricsAssertHelperImpl metricsAssert;
 	// private MetricsHBaseServerSourceImpl metricsSource;
@@ -328,7 +338,7 @@ public class MonitoredSimpleRpcScheduler extends RpcScheduler implements
 					DEFAULT_QUEUE_DUMP_INTERVAL);
 			String zNode = this.conf.get(QUEUE_DUMP_ZNODE,
 					QUEUE_DUMP_ZNODE_DEDAULT);
-			this.monitor = new MonitoredSimpleRpSchdulerThread(conf, interval,
+			this.monitor = new MonitoredSimpleRpcSchdulerThread(conf, interval,
 					service, zNode, this, broker);
 		} catch (IOException e) {
 			LOG.error("Failed to initialize monitor thread.", e);
@@ -540,11 +550,12 @@ public class MonitoredSimpleRpcScheduler extends RpcScheduler implements
 		metrics.setCallQueueUsage(getGeneralQueueLength());
 		metrics.setPriorityQueueUsage(getPriorityQueueLength());
 		metrics.setReplicationQueueUsage(getReplicationQueueLength());
-		queueRate.getOpsLastInterval();
-		processRate.getOpsLastInterval();
-		metrics.setAverageQueueTime(queueRate.getSpeedLastInterval());
-		metrics.setAverageProcessTime(processRate.getSpeedLastInterval());
-		metrics.setRpcProcessOps(processRate.getOpsLastInterval());
+//		queueRate.getOpsLastInterval();
+//		processRate.getOpsLastInterval();
+		metrics.setLastQueueTime(queueRate.getTimeLastInterval());
+		metrics.setLastQueueOps(queueRate.getOpsLastInterval());
+		metrics.setLastProcessOps(processRate.getOpsLastInterval());
+		metrics.setLastProcessTime(processRate.getTimeLastInterval());
 
 		LOG.info(sb.toString());
 

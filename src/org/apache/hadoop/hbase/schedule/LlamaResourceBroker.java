@@ -7,9 +7,9 @@ import java.util.Random;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.ipc.MonitoredSimpleRpcScheduler;
 import org.apache.hadoop.hbase.schedule.llama.LlamaClient;
 import org.apache.hadoop.hbase.schedule.llama.NotificationListener;
+import org.apache.hadoop.hbase.schedule.metrics.HBaseScheduleMetrics;
 
 import com.cloudera.llama.server.TypeUtils;
 import com.cloudera.llama.thrift.TLlamaAMNotificationRequest;
@@ -48,8 +48,8 @@ public class LlamaResourceBroker implements ResourceBroker {
 	public static final int DEFAULT_LLAMA_CLIENT_PORT = 55555;
 
 	public static final double IDLE_LEVEL = 0;
-	public static final double NORMAL_LEVEL = 0.2;
-	public static final double WARN_LEVEL = 0.8;
+	public static final double NORMAL_LEVEL = 0.3;
+	public static final double WARN_LEVEL = 0.7;
 	public static final double CRITICAL_LEVEL = 1;
 	
 	class MinResourceListener implements NotificationListener {
@@ -169,11 +169,15 @@ public class LlamaResourceBroker implements ResourceBroker {
 
 	@Override
 	public void schedule(HBaseScheduleMetrics metrics) throws Exception {
-		double latencyRate = ((double) metrics.getAverageProcessTime() + metrics
-				.getAverageQueueTime()) / latencyThreshold;
+		double averageProcessTime = ((double) metrics.getLastProcessTime()) / metrics.getLastProcessOps();
+		double averageQueueTime = ((double) metrics.getLastQueueTime()) / metrics.getLastQueueOps();
+
+		double latencyRate = (averageProcessTime + averageQueueTime) / latencyThreshold;
 
 		String overall;
 
+		LOG.info("Current [cpu: " + client.getTotalCpuAllocated() + ", mem: " + client.getTotalMemAllocated() + "]");
+		
 		if (latencyRate < IDLE_LEVEL) {
 			overall = "unknown";
 			LOG.info("Do nothing");
@@ -194,10 +198,8 @@ public class LlamaResourceBroker implements ResourceBroker {
 		} else {
 			overall = "critical";
 			LOG.info("Need more resource!");
-			if (client.getTotalCpuRequire() == 0 && client.getTotalMemRequire() == 0) {
-				LOG.info("Reserve resoruce");
-				reserve();
-			}
+			LOG.info("Reserve resoruce");
+			reserve();
 		}
 	}
 	
